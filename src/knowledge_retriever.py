@@ -3,26 +3,27 @@ import re
 class KnowledgeRetriever:
     def __init__(self):
         self.knowledge_base = {
-            "產品介紹": {
-                "keywords": ["什麼", "功能", "介紹", "說明", "用途"],
-                "content": "我們的產品支援 AI 報修、智慧分析與自動派工功能。"
+            "產品": {
+                "keywords": ["產品", "功能", "介紹", "說明", "用途"],
+                "content": "本系統支援智慧報修、自動派工、AI 圖片判斷問題等功能。"
             },
-            "價格方案": {
+            "價格": {
                 "keywords": ["價格", "費用", "多少錢", "收費", "價錢"],
-                "content": "基本版免費使用，專業版每月 NT$499，企業方案可聯繫銷售人員。"
+                "content": "基本版免費使用，專業版每月 NT$499。"
             },
+            "維修": {
+                "keywords": ["維修", "報修", "壞了", "修理", "問題"],
+                "content": "請上傳故障圖片，我們會自動判斷問題並派工。"
+            }
         }
 
     def retrieve(self, query):
         results = []
-        query = query.lower()
-
-        for category, info in self.knowledge_base.items():
-            for kw in info["keywords"]:
-                if re.search(kw, query, re.IGNORECASE):
-                    results.append(info["content"])
-                    break
-
-        if not results:
-            results.append("抱歉，暫時沒有相關資訊。")
+        matched = False
+        for topic, info in self.knowledge_base.items():
+            if any(kw in query for kw in info["keywords"]):
+                results.append(info["content"])
+                matched = True
+        if not matched:
+            results.append("無明確知識匹配。")
         return results
