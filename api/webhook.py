@@ -17,8 +17,12 @@ responder = GeminiResponder(api_key=os.getenv('GEMINI_API_KEY'))
 
 def process_text_message(user_message):
     knowledge = retriever.retrieve(user_message)
-    combined_knowledge = "\n".join(knowledge) if knowledge else "無相關知識"
+    combined_knowledge = "\n".join(knowledge)
     ai_reply = responder.generate_response(user_message, combined_knowledge)
+
+    if "不太確定" in ai_reply or "無明確" in combined_knowledge:
+        ai_reply += "\n\n（如果方便，您可以更具體描述一下問題，我會再幫您確認。）"
+
     return ai_reply
 
 
