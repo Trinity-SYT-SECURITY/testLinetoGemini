@@ -1,35 +1,44 @@
-import pdfplumber, os
-from datetime import datetime
+import fitz  # PyMuPDF
+import os
 
 class PDFProcessor:
-    def __init__(self):
-        self.pdf_dir = "/tmp/pdfs"
-        os.makedirs(self.pdf_dir, exist_ok=True)
-        self.pdf_chunks = {}  # user_id -> list of chunks
+    """
+    輕量版 PDF 文字擷取器。
+    將 PDF 拆成小段落 (chunks)，避免超過 Gemini context。
+    """
+    def __init__(self, save_dir="/tmp/pdf_uploads"):
+        self.save_dir = save_dir
+        os.makedirs(self.save_dir, exist_ok=True)
+        self.chunk_size = 1500  # 每段字元上限，避免超過 context window
 
-    def save_pdf(self, user_id, file_name, file_bytes):
-        path = os.path.join(self.pdf_dir, f"{user_id}_{file_name}")
-        with open(path, "wb") as f:
-            f.write(file_bytes)
-        # 解析 PDF
-        self.pdf_chunks[user_id] = self._extract_chunks(path)
+    def extract_text_chunks(self, pdf_path):
+        text = ""
+        doc = fitz.open(pdf_path)
+        for page in doc:
+            text += page.get_text("text") + "\n"
+        doc.close()
 
-    def _extract_chunks(self, path, chunk_size=500):
+        # 切割成 chunks
         chunks = []
-        try:
-            with pdfplumber.open(path) as pdf:
-                text_all = ""
-                for page in pdf.pages:
-                    text_all += page.extract_text() + "\n"
-            # 切 chunk
-            text_all = text_all.replace("\n", " ")
-            for i in range(0, len(text_all), chunk_size):
-                chunks.append(text_all[i:i+chunk_size])
-        except Exception as e:
-            print("PDF 解析錯誤:", e)
+        for i in range(0, len(text), self.chunk_size):
+            chunks.append(text[i:i+self.chunk_size])
+
         return chunks
 
-    def retrieve_relevant_chunks(self, query, user_id=None):
-        if user_id and user_id in self.pdf_chunks:
-            return self.pdf_chunks[user_id]
-        return []
+    def save_pdf(self, file_bytes, filename):
+        pdf_path = os.path.join(self.save_dir, filename)
+        with open(pdf_path, "wb") as f:
+            f.write(file_bytes)
+        return pdf_path
+
+    def retrieve_relevant_chunks(self, user_id):
+        """
+        之後可根據 user_id 找對應 PDF。
+        現在簡化處理為直接回傳最新上傳的 PDF chunks。
+        """
+        pdf_files = [f for f in os.listdir(self.save_dir) if f.endswith(".pdf")]
+        if not pdf_files:
+            return []
+        latest_pdf = max(pdf_files, key=lambda f: os.path.getmtime(os.path.join(self.save_dir, f)))
+        pdf_path = os.path.join(self.save_dir, latest_pdf)
+        return self.extract_text_chunks(pdf_path)
