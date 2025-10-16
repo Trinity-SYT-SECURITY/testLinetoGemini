@@ -28,3 +28,13 @@ class GeminiResponder:
             generation_config={"temperature": 0.4, "top_p": 0.9}
         )
         return response.text.strip()
+
+    def generate_response_with_image(self, image_bytes, user_message="用戶上傳圖片需要分析問題"):
+        prompt = f"""
+使用者上傳了一張報修圖片，並描述問題如下：
+「{user_message}」
+
+請分析圖片可能的問題與建議處理方式。
+"""
+        response = self.model.generate_content([prompt, image_bytes])
+        return response.text.strip()
