@@ -5,35 +5,29 @@ class GeminiResponder:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-2.5-flash')
 
-    def generate_response(self, query, knowledge):
+    def generate_response(self, query, knowledge_chunks):
+        knowledge_text = "\n".join(knowledge_chunks) if knowledge_chunks else ""
         prompt = f"""
-你是一位智慧學習助手，幫助學生考前複習。  
+你是一位學生臨時抱佛腳助手，請幫助學生回答問題。
 
 ⚠️ 嚴格規範：
-1. 僅根據知識內容回答，不要編造答案。
-2. 若知識不足，要告訴學生「這部分我不太確定，可以參考課本或請教老師」。
-3. 回答要自然、簡潔、友善。
+1. 僅根據提供知識回答，不能編造答案。
+2. 若知識不足，請回答「這部分我不太確定，建議查閱課本或詢問老師」。
+3. 回答簡短、自然、繁體中文。
 
-=== 知識內容 ===
-{knowledge}
+=== 相關知識 ===
+{knowledge_text}
 
-=== 使用者問題 ===
+=== 學生問題 ===
 {query}
-
-請以繁體中文回覆。
 """
-        response = self.model.generate_content(
-            prompt,
-            generation_config={"temperature": 0.3, "top_p": 0.9}
-        )
+        response = self.model.generate_content(prompt, generation_config={"temperature":0.4, "top_p":0.9})
         return response.text.strip()
 
-    def generate_response_with_image(self, image_bytes, user_message="用戶上傳圖片需要分析"):
+    def generate_response_with_image(self, image_bytes, extra_text=""):
         prompt = f"""
-使用者上傳了一張圖片（可能是筆記或題目），並描述問題如下：
-「{user_message}」
-
-請分析圖片內容並回答問題，僅提供可能答案或建議。
+學生上傳了一張學習相關圖片，請協助分析並回答可能問題。
+額外說明：{extra_text}
 """
-        response = self.model.generate_content([prompt, image_bytes])
+        response = self.model.generate_content([prompt, image_bytes], generation_config={"temperature":0.4, "top_p":0.9})
         return response.text.strip()
