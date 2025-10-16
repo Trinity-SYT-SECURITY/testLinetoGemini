@@ -1,5 +1,3 @@
-import re
-
 class KnowledgeRetriever:
     def __init__(self):
         self.knowledge_base = {
