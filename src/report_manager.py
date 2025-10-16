@@ -3,17 +3,28 @@ import os
 from datetime import datetime
 
 class ReportManager:
-    def __init__(self, save_path="reports"):
+    def __init__(self, save_path=None):
+        # Vercel Serverless 只能寫入 /tmp
+        if save_path is None:
+            save_path = "/tmp/reports"
         self.save_path = save_path
-        os.makedirs(save_path, exist_ok=True)
+        os.makedirs(self.save_path, exist_ok=True)  # 自動創建目錄
         self.records = []
 
-    def add_record(self, user_id, user_message, ai_reply, image_filename=None):
+    def add_record(self, user_id, user_message, ai_reply, image_bytes=None):
+        image_filename = None
+        if image_bytes:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            image_filename = f"{user_id}_{timestamp}.jpg"
+            image_path = os.path.join(self.save_path, image_filename)
+            with open(image_path, "wb") as f:
+                f.write(image_bytes)
+
         record = {
             "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "UserID": user_id,
             "UserMessage": user_message,
-            "ImageSaved": image_filename if image_filename else "",
+            "ImageSaved": image_filename if image_bytes else "",
             "AI_Reply": ai_reply
         }
         self.records.append(record)
