@@ -6,28 +6,25 @@ class GeminiResponder:
         self.model = genai.GenerativeModel('gemini-2.5-flash')
 
     def generate_response(self, query, knowledge_chunks):
-        knowledge_text = "\n".join(knowledge_chunks) if knowledge_chunks else ""
-        prompt = f"""
-你是一位學生臨時抱佛腳助手，請幫助學生回答問題。
+        prompt_text = "你是一位智慧學習助理。\n"
+        prompt_text += "使用者問題：\n" + query + "\n"
+        prompt_text += "相關知識：\n" + "\n".join(knowledge_chunks) + "\n\n"
+        prompt_text += ("請以人類能理解的語言回答問題，如果知識不足或問題無意義，回答："
+                        "「抱歉，我不太理解這個問題，能換個方式問嗎？」")
 
-⚠️ 嚴格規範：
-1. 僅根據提供知識回答，不能編造答案。
-2. 若知識不足，請回答「這部分我不太確定，建議查閱課本或詢問老師」。
-3. 回答簡短、自然、繁體中文。
-
-=== 相關知識 ===
-{knowledge_text}
-
-=== 學生問題 ===
-{query}
-"""
-        response = self.model.generate_content(prompt, generation_config={"temperature":0.4, "top_p":0.9})
+        response = self.model.generate_content(
+            prompt_text,
+            generation_config={"temperature": 0.4, "top_p": 0.9}
+        )
         return response.text.strip()
 
-    def generate_response_with_image(self, image_bytes, extra_text=""):
-        prompt = f"""
-學生上傳了一張學習相關圖片，請協助分析並回答可能問題。
-額外說明：{extra_text}
-"""
-        response = self.model.generate_content([prompt, image_bytes], generation_config={"temperature":0.4, "top_p":0.9})
+    def generate_response_with_image(self, image_bytes, user_message=""):
+        prompt_text = "使用者上傳了一張圖片，請分析可能問題並給出建議。"
+        if user_message:
+            prompt_text += f"\n文字描述：{user_message}"
+
+        response = self.model.generate_content(
+            [prompt_text, image_bytes],
+            generation_config={"temperature":0.4, "top_p":0.9}
+        )
         return response.text.strip()
