@@ -1,25 +1,35 @@
-import PyPDF2
+import pdfplumber, os
+from datetime import datetime
 
 class PDFProcessor:
     def __init__(self):
-        self.documents = {}
+        self.pdf_dir = "/tmp/pdfs"
+        os.makedirs(self.pdf_dir, exist_ok=True)
+        self.pdf_chunks = {}  # user_id -> list of chunks
 
-    def load_pdf(self, user_id, file_path, chunk_size=1000):
-        """解析 PDF 並拆成 chunk"""
-        text_chunks = []
-        with open(file_path, "rb") as f:
-            reader = PyPDF2.PdfReader(f)
-            for page in reader.pages:
-                text = page.extract_text()
-                if text:
-                    # 拆成 chunk
-                    for i in range(0, len(text), chunk_size):
-                        text_chunks.append(text[i:i+chunk_size])
-        self.documents[user_id] = text_chunks
-        return len(text_chunks)
+    def save_pdf(self, user_id, file_name, file_bytes):
+        path = os.path.join(self.pdf_dir, f"{user_id}_{file_name}")
+        with open(path, "wb") as f:
+            f.write(file_bytes)
+        # 解析 PDF
+        self.pdf_chunks[user_id] = self._extract_chunks(path)
 
-    def retrieve_chunks(self, user_id, query, max_chunks=3):
-        """簡單檢索包含 query 關鍵詞的 chunk"""
-        chunks = self.documents.get(user_id, [])
-        results = [c for c in chunks if query in c]
-        return results[:max_chunks] if results else chunks[:max_chunks]
+    def _extract_chunks(self, path, chunk_size=500):
+        chunks = []
+        try:
+            with pdfplumber.open(path) as pdf:
+                text_all = ""
+                for page in pdf.pages:
+                    text_all += page.extract_text() + "\n"
+            # 切 chunk
+            text_all = text_all.replace("\n", " ")
+            for i in range(0, len(text_all), chunk_size):
+                chunks.append(text_all[i:i+chunk_size])
+        except Exception as e:
+            print("PDF 解析錯誤:", e)
+        return chunks
+
+    def retrieve_relevant_chunks(self, query, user_id=None):
+        if user_id and user_id in self.pdf_chunks:
+            return self.pdf_chunks[user_id]
+        return []
