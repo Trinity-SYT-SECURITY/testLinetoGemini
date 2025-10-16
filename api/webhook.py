@@ -45,7 +45,6 @@ def get_line_image(message_id):
 
 # ---------------- 處理訊息 ----------------
 def process_text_message(user_message, user_id):
-    # 去除 PDF 檢索邏輯
     knowledge_chunks = retriever.retrieve(user_message)
     ai_reply = responder.generate_response(user_message, knowledge_chunks)
 
@@ -95,3 +94,5 @@ def webhook():
 
         return 'OK'
     except Exception as e:
+        print("Webhook 錯誤:", e)
+        return 'Error', 500  # ✅ ← 這行必須縮排到 except 裡面！
