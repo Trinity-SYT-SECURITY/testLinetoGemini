@@ -16,6 +16,10 @@ CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 retriever = KnowledgeRetriever()
 responder = GeminiResponder(api_key=os.getenv('GEMINI_API_KEY'))
 
+def process_image_message(image_bytes):
+    return responder.generate_response_with_image(image_bytes)
+
+
 @app.route("/api/webhook", methods=['POST'])
 def webhook():
     body = request.get_data(as_text=True)
@@ -71,5 +75,6 @@ def process_message(user_message):
     combined_knowledge = "\n".join(knowledge)
     ai_reply = responder.generate_response(user_message, combined_knowledge)
     return ai_reply
+
 
 
