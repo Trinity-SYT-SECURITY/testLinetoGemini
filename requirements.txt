@@ -1,7 +1,6 @@
-flask
-requests
 pandas
 openpyxl
-google-generativeai
-pdfplumber
+flask
+requests
 PyPDF2
+google-generativeai
