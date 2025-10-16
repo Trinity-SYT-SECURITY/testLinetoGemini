@@ -19,8 +19,6 @@ responder = GeminiResponder(api_key=os.getenv('GEMINI_API_KEY'))
 @app.route("/api/webhook", methods=['POST'])
 def webhook():
     body = request.get_data(as_text=True)
-    print("接收到的內容：", body)
-
     events = json.loads(body).get('events', [])
 
     if len(events) == 0:
@@ -28,14 +26,23 @@ def webhook():
 
     for event in events:
         if event['type'] == 'message':
-            user_message = event['message']['text']
+            msg_type = event['message']['type']
             reply_token = event['replyToken']
+            user_id = event['source']['userId']
 
-            # 呼叫 AI 處理訊息
-            response = process_message(user_message)
-            reply_to_line(reply_token, response)
+            if msg_type == 'text':
+                user_message = event['message']['text']
+                response = process_text_message(user_message)
+                reply_to_line(reply_token, response)
+
+            elif msg_type == 'image':
+                message_id = event['message']['id']
+                image_bytes = get_line_image(message_id)
+                response = process_image_message(image_bytes)
+                reply_to_line(reply_token, response)
 
     return 'OK'
+
 
 def reply_to_line(reply_token, text):
     """透過 LINE API 回覆訊息"""
@@ -57,3 +64,4 @@ def process_message(user_message):
     combined_knowledge = "\n".join(knowledge)
     ai_reply = responder.generate_response(user_message, combined_knowledge)
     return ai_reply
+
