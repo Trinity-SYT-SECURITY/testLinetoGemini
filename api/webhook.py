@@ -12,7 +12,8 @@ CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 @app.route("/api/webhook", methods=['POST'])
 def webhook():
     body = request.get_data(as_text=True)
-    print("接收到的內容：", body)  # 這行會在 Vercel log 中出現
+    print("接收到的內容：", body)
+
     events = json.loads(body).get('events', [])
 
     if len(events) == 0:
@@ -23,10 +24,13 @@ def webhook():
             user_message = event['message']['text']
             reply_token = event['replyToken']
 
-            response = process_message(user_message)
+            # 先暫時移除 AI 處理，直接回覆固定訊息
+            response = f"你剛剛說了：{user_message}"
             reply_to_line(reply_token, response)
 
     return 'OK'
+
+
 
 
 def reply_to_line(reply_token, text):
@@ -42,3 +46,4 @@ def reply_to_line(reply_token, text):
     }
 
     requests.post(url, headers=headers, json=data)
+
