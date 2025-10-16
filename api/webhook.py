@@ -1,13 +1,20 @@
-from flask import Flask, request, abort
+from flask import Flask, request
 import json
 import requests
 import os
 
+from src.knowledge_retriever import KnowledgeRetriever
+from src.gemini_responder import GeminiResponder
+
 app = Flask(__name__)
 
-# 你的 LINE 憑證
+# LINE 憑證
 CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
 CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
+
+# 初始化知識檢索器與 AI 回應者
+retriever = KnowledgeRetriever()
+responder = GeminiResponder(api_key=os.getenv('GEMINI_API_KEY'))
 
 @app.route("/api/webhook", methods=['POST'])
 def webhook():
@@ -24,14 +31,11 @@ def webhook():
             user_message = event['message']['text']
             reply_token = event['replyToken']
 
-            # 先暫時移除 AI 處理，直接回覆固定訊息
-            response = f"你剛剛說了：{user_message}"
+            # 呼叫 AI 處理訊息
+            response = process_message(user_message)
             reply_to_line(reply_token, response)
 
     return 'OK'
-
-
-
 
 def reply_to_line(reply_token, text):
     """透過 LINE API 回覆訊息"""
@@ -47,3 +51,9 @@ def reply_to_line(reply_token, text):
 
     requests.post(url, headers=headers, json=data)
 
+def process_message(user_message):
+    """整合 L1（知識）+ L2（AI）處理訊息"""
+    knowledge = retriever.retrieve(user_message)
+    combined_knowledge = "\n".join(knowledge)
+    ai_reply = responder.generate_response(user_message, combined_knowledge)
+    return ai_reply
