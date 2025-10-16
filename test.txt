@@ -1,0 +1,213 @@
+了解，你的程式架構已經很不錯了，我幫你整理「建議修改重點」與「修正範例」，方便你一步步修改和驗證。
+
+---
+
+# 🔧 你要修的地方及建議修改
+
+## 1. api/webhook.py
+
+* 補上 `process_text_message()` 函式，否則 webhook 收到文字訊息會報錯
+* 圖片處理建議改用 `process_image_with_text()` 結合文字與圖片分析，或擴充圖片分析流程
+* 回覆函式加上錯誤檢查與非同步（如果你想優化）
+* `reply_to_line` 建議加入錯誤處理和log方便debug
+* webhook 回傳固定 `'OK'` 可以保留，但錯誤時可回其他狀態碼
+* `get_line_image` 可加失敗重試或log
+
+## 2. src/gemini_responder.py
+
+* 建議調整 `generate_response_with_image()` 支援文字+圖片結合輸入
+* `generate_response()` prompt 可以優化格式跟加入 context 參數
+* 目前你用的是 `gemini-1.5-flash`，如果要用 `gemini-2.5-flash` 或多模態，記得模型要改對
+
+## 3. src/knowledge_retriever.py
+
+* 建議加入更多關鍵字與更複雜檢索（例如用向量搜尋）
+* 加入預設回應或沒找到結果的 fallback
+
+---
+
+# 🛠 修正版示範
+
+---
+
+## api/webhook.py
+
+```python
+from flask import Flask, request
+import json
+import requests
+import os
+
+from src.knowledge_retriever import KnowledgeRetriever
+from src.gemini_responder import GeminiResponder
+
+app = Flask(__name__)
+
+CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
+CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
+
+retriever = KnowledgeRetriever()
+responder = GeminiResponder(api_key=os.getenv('GEMINI_API_KEY'))
+
+
+def process_text_message(user_message):
+    knowledge = retriever.retrieve(user_message)
+    combined_knowledge = "\n".join(knowledge) if knowledge else "無相關知識"
+    ai_reply = responder.generate_response(user_message, combined_knowledge)
+    return ai_reply
+
+
+def process_image_message(image_bytes):
+    return responder.generate_response_with_image(image_bytes)
+
+
+def process_image_with_text(image_bytes, user_message):
+    knowledge = retriever.retrieve(user_message)
+    combined_knowledge = "\n".join(knowledge) if knowledge else ""
+    prompt = f"""
+使用者上傳了一張報修圖片，並描述問題如下：
+「{user_message}」
+
+請結合圖片與描述內容，分析可能問題與建議。
+"""
+    response = responder.model.generate_content([prompt, image_bytes])
+    return response.text
+
+
+@app.route("/api/webhook", methods=['POST'])
+def webhook():
+    try:
+        body = request.get_data(as_text=True)
+        events = json.loads(body).get('events', [])
+
+        if len(events) == 0:
+            return 'OK'
+
+        for event in events:
+            if event['type'] == 'message':
+                msg_type = event['message']['type']
+                reply_token = event['replyToken']
+                user_id = event['source']['userId']
+
+                if msg_type == 'text':
+                    user_message = event['message']['text']
+                    response = process_text_message(user_message)
+                    reply_to_line(reply_token, response)
+
+                elif msg_type == 'image':
+                    message_id = event['message']['id']
+                    image_bytes = get_line_image(message_id)
+                    # 這邊先用簡單圖片回應，也可以改用文字結合圖片：
+                    response = process_image_message(image_bytes)
+                    reply_to_line(reply_token, response)
+
+                else:
+                    reply_to_line(reply_token, "抱歉，目前只支援文字與圖片訊息。")
+
+        return 'OK'
+    except Exception as e:
+        print("Webhook 錯誤:", e)
+        return 'Error', 500
+
+
+def get_line_image(message_id):
+    url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
+    headers = {'Authorization': f'Bearer {CHANNEL_ACCESS_TOKEN}'}
+    res = requests.get(url, headers=headers)
+    if res.status_code != 200:
+        print(f"下載圖片失敗，狀態碼：{res.status_code}")
+        return None
+    return res.content
+
+
+def reply_to_line(reply_token, text):
+    url = 'https://api.line.me/v2/bot/message/reply'
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {CHANNEL_ACCESS_TOKEN}'
+    }
+    data = {
+        'replyToken': reply_token,
+        'messages': [{'type': 'text', 'text': text}]
+    }
+    resp = requests.post(url, headers=headers, json=data)
+    if resp.status_code != 200:
+        print(f"回覆訊息失敗: {resp.status_code} {resp.text}")
+```
+
+---
+
+## src/gemini_responder.py
+
+```python
+import google.generativeai as genai
+
+class GeminiResponder:
+    def __init__(self, api_key):
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel('gemini-2.5-flash')  # 改用多模態新版
+
+    def generate_response(self, query, knowledge):
+        prompt = f"""
+你是智慧報修助理，根據以下知識與使用者問題給出簡潔建議。
+
+知識：
+{knowledge}
+
+問題：
+{query}
+"""
+        response = self.model.generate_content(prompt)
+        return response.text
+
+    def generate_response_with_image(self, image_bytes):
+        prompt = "這是用戶上傳的報修圖片，請協助判斷問題及建議處理方式。"
+        response = self.model.generate_content(
+            [prompt, image_bytes],
+            generation_config={"temperature": 0.4}
+        )
+        return response.text
+```
+
+---
+
+## src/knowledge_retriever.py
+
+```python
+class KnowledgeRetriever:
+    def __init__(self):
+        self.knowledge_base = {
+            "產品介紹": {
+                "keywords": ["什麼", "功能", "介紹"],
+                "content": "我們的產品可以..."
+            },
+            "價格方案": {
+                "keywords": ["價格", "費用", "多少錢"],
+                "content": "基本版免費，進階版每月..."
+            },
+        }
+
+    def retrieve(self, query):
+        results = []
+        for category, info in self.knowledge_base.items():
+            if any(kw in query for kw in info["keywords"]):
+                results.append(info["content"])
+        if not results:
+            results.append("抱歉，暫時沒有相關資訊。")
+        return results
+```
+
+---
+
+# 🚀 下一步建議
+
+* 按照上面程式碼調整 webhook.py，補齊 `process_text_message`，改用 `gemini-2.5-flash`
+* 測試文字、圖片訊息，檢查 LINE webhook log 和你的伺服器 log（Vercel）
+* 逐步優化知識庫或用向量資料庫（像 Pinecone、Weaviate）
+* 圖片分析功能可接著加上文字+圖片結合提示，讓模型更懂上下文
+* 部署時記得設定三個環境變數：`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`、`GEMINI_API_KEY`
+
+---
+
+需要我幫你寫更完整的 README、部署教學、mermaid 流程圖都可以跟我說！
+想要哪個功能優先也告訴我～
