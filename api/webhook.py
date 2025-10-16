@@ -44,27 +44,20 @@ def get_line_image(message_id):
 
 # ---------------- 處理訊息 ----------------
 def process_text_message(user_message, user_id):
-    # 先檢索知識庫或 PDF
-    knowledge_chunks = retriever.retrieve(user_message)
-    pdf_chunks = pdf_processor.retrieve_relevant_chunks(user_message)
-    all_chunks = knowledge_chunks + pdf_chunks
+    # 先取得 PDF chunks
+    pdf_chunks = pdf_processor.retrieve_relevant_chunks(user_id)
 
-    # 判斷是否有匹配內容
-    if not all_chunks:
-        # fallback: 常識問題或基礎問題
-        prompt_chunks = ["這是一個學習助手，可以回答一般學科問題和常識。"]
-    else:
-        prompt_chunks = all_chunks
+    # 動態檢索
+    knowledge_chunks = retriever.retrieve(user_message, pdf_chunks)
 
-    ai_reply = responder.generate_response(user_message, prompt_chunks)
+    ai_reply = responder.generate_response(user_message, knowledge_chunks)
 
     # 過濾亂問
     if len(user_message.strip()) == 0 or len(user_message) > 300:
         ai_reply = "抱歉，我不太理解這個問題，能換個方式問嗎？"
 
-    # 存報告
-    report_manager.add_record(user_id, user_message, ai_reply)
     return ai_reply
+
 
 def process_image_message(image_bytes, user_message, user_id):
     ai_reply = responder.generate_response_with_image(image_bytes, user_message)
