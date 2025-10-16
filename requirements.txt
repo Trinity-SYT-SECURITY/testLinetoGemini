@@ -4,3 +4,4 @@ flask
 requests
 PyPDF2
 google-generativeai
+PyMuPDF
