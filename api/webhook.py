@@ -18,6 +18,18 @@ responder = GeminiResponder(api_key=os.getenv('GEMINI_API_KEY'))
 
 def process_image_message(image_bytes):
     return responder.generate_response_with_image(image_bytes)
+    
+def process_image_with_text(image_bytes, user_message):
+    knowledge = retriever.retrieve(user_message)
+    prompt = f"""
+使用者上傳了一張報修圖片，並描述問題如下：
+「{user_message}」
+
+請結合圖片與描述內容，分析可能問題與建議。
+"""
+
+    response = responder.model.generate_content([prompt, image_bytes])
+    return response.text
 
 
 @app.route("/api/webhook", methods=['POST'])
@@ -75,6 +87,7 @@ def process_message(user_message):
     combined_knowledge = "\n".join(knowledge)
     ai_reply = responder.generate_response(user_message, combined_knowledge)
     return ai_reply
+
 
 
 
