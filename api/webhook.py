@@ -2,7 +2,7 @@ from flask import Flask, request
 import json
 import requests
 import os
-
+from src.report_manager import ReportManager
 from src.knowledge_retriever import KnowledgeRetriever
 from src.gemini_responder import GeminiResponder
 
@@ -13,6 +13,33 @@ CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 
 retriever = KnowledgeRetriever()
 responder = GeminiResponder(api_key=os.getenv('GEMINI_API_KEY'))
+
+
+
+
+report_manager = ReportManager()
+
+# 修改 process_text_message 與 process_image_message，新增收集功能
+def process_text_message(user_message, user_id):
+    knowledge = retriever.retrieve(user_message)
+    combined_knowledge = "\n".join(knowledge)
+    ai_reply = responder.generate_response(user_message, combined_knowledge)
+
+    # 新增報修記錄
+    report_manager.add_record(user_id, user_message, ai_reply)
+    return ai_reply
+
+
+def process_image_message(image_bytes, user_message, user_id):
+    ai_reply = responder.generate_response_with_image(image_bytes)
+    # 儲存圖片
+    image_filename = f"{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+    image_path = os.path.join("reports", image_filename)
+    with open(image_path, "wb") as f:
+        f.write(image_bytes)
+    # 新增報修記錄
+    report_manager.add_record(user_id, user_message, ai_reply, image_filename)
+    return ai_reply
 
 
 def process_text_message(user_message):
