@@ -1,5 +1,5 @@
-import pandas as pd
 import os
+import csv
 from datetime import datetime
 
 class ReportManager:
@@ -7,29 +7,22 @@ class ReportManager:
         self.save_path = save_path
         os.makedirs(self.save_path, exist_ok=True)
         self.records = []
+        self.csv_file = os.path.join(self.save_path, "report.csv")
+        if not os.path.exists(self.csv_file):
+            with open(self.csv_file, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=["Timestamp","UserID","UserMessage","ImageSaved","AI_Reply"])
+                writer.writeheader()
 
-    def add_record(self, user_id, user_message, ai_reply, pdf_filename=None, image_bytes=None):
-        image_filename = None
-        if image_bytes:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            image_filename = f"{user_id}_{timestamp}.jpg"
-            path = os.path.join(self.save_path, image_filename)
-            with open(path, "wb") as f:
-                f.write(image_bytes)
-
+    def add_record(self, user_id, user_message, ai_reply, image_filename=None):
         record = {
             "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "UserID": user_id,
             "UserMessage": user_message,
-            "PDF_File": pdf_filename if pdf_filename else "",
-            "Image_File": image_filename if image_bytes else "",
+            "ImageSaved": image_filename if image_filename else "",
             "AI_Reply": ai_reply
         }
         self.records.append(record)
-
-    def export_excel(self):
-        filename = f"learning_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        path = os.path.join(self.save_path, filename)
-        df = pd.DataFrame(self.records)
-        df.to_excel(path, index=False)
-        return path
+        with open(self.csv_file, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=record.keys())
+            writer.writerow(record)
+        return self.csv_file
