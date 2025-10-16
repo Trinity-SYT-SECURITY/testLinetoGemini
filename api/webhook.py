@@ -43,6 +43,13 @@ def webhook():
 
     return 'OK'
 
+def get_line_image(message_id):
+    url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
+    headers = {
+        'Authorization': f'Bearer {CHANNEL_ACCESS_TOKEN}'
+    }
+    res = requests.get(url, headers=headers)
+    return res.content  # 回傳圖片的 binary
 
 def reply_to_line(reply_token, text):
     """透過 LINE API 回覆訊息"""
@@ -64,4 +71,5 @@ def process_message(user_message):
     combined_knowledge = "\n".join(knowledge)
     ai_reply = responder.generate_response(user_message, combined_knowledge)
     return ai_reply
+
 
