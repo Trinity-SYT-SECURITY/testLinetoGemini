@@ -3,7 +3,7 @@ import google.generativeai as genai
 class GeminiResponder:
     def __init__(self, api_key):
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
         
     def generate_response(self, query, knowledge):
         # 建立 AI 的指令
@@ -19,4 +19,5 @@ class GeminiResponder:
         """
         
         response = self.model.generate_content(prompt)
+
         return response.text
