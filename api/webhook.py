@@ -3,6 +3,7 @@ import json
 import requests
 import os
 from datetime import datetime
+from src.pdf_processor import PDFProcessor
 from src.knowledge_retriever import KnowledgeRetriever
 from src.gemini_responder import GeminiResponder
 from src.report_manager import ReportManager
@@ -10,25 +11,27 @@ from src.report_manager import ReportManager
 app = Flask(__name__)
 
 CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
+pdf_processor = PDFProcessor()
 retriever = KnowledgeRetriever()
-responder = GeminiResponder(api_key=os.getenv('GEMINI_API_KEY'))
+responder = GeminiResponder(api_key=GEMINI_API_KEY)
 report_manager = ReportManager()
 
-# 確保 /tmp/reports 目錄存在
+# 確保目錄存在
 os.makedirs("/tmp/reports", exist_ok=True)
+os.makedirs("/tmp/pdf_uploads", exist_ok=True)
 
-# 取得 LINE 圖片
+# LINE 圖片下載
 def get_line_image(message_id):
     url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
     headers = {'Authorization': f'Bearer {CHANNEL_ACCESS_TOKEN}'}
     res = requests.get(url, headers=headers)
     if res.status_code != 200:
-        print(f"下載圖片失敗，狀態碼：{res.status_code}")
+        print(f"下載圖片失敗: {res.status_code}")
         return None
     return res.content
 
-# 回覆 LINE
 def reply_to_line(reply_token, text):
     url = 'https://api.line.me/v2/bot/message/reply'
     headers = {
@@ -43,31 +46,31 @@ def reply_to_line(reply_token, text):
     if resp.status_code != 200:
         print(f"回覆訊息失敗: {resp.status_code} {resp.text}")
 
-# 處理文字訊息
-def process_text_message(user_message, user_id):
-    knowledge = retriever.retrieve(user_message)
-    combined_knowledge = "\n".join(knowledge)
+# 處理文字問題
+def process_text_message(user_id, user_message):
+    knowledge_chunks = retriever.retrieve(user_id, user_message)
+    combined_knowledge = "\n".join(knowledge_chunks)
     ai_reply = responder.generate_response(user_message, combined_knowledge)
-
-    if "不太確定" in ai_reply or "無明確" in combined_knowledge:
-        ai_reply += "\n\n（請更具體描述，我會再幫您分析。）"
-
     report_manager.add_record(user_id, user_message, ai_reply)
     return ai_reply
 
-# 處理圖片+文字
-def process_image_with_text(image_bytes, user_message, user_id):
+# 處理 PDF 上傳
+def process_pdf_upload(user_id, pdf_bytes):
+    path = pdf_processor.save_pdf(user_id, pdf_bytes)
+    chunks = pdf_processor.extract_text_chunks(user_id, path)
+    retriever.add_pdf_chunks(user_id, chunks)
+    return f"已上傳 PDF，總共 {len(chunks)} 個內容片段已加入知識庫。"
+
+# 處理圖片
+def process_image(user_id, image_bytes, user_message="用戶上傳圖片"):
     ai_reply = responder.generate_response_with_image(image_bytes, user_message)
     report_manager.add_record(user_id, user_message, ai_reply, image_bytes=image_bytes)
     return ai_reply
 
-# Webhook
 @app.route("/api/webhook", methods=['POST'])
 def webhook():
     try:
-        body = request.get_data(as_text=True)
-        events = json.loads(body).get('events', [])
-
+        events = json.loads(request.get_data(as_text=True)).get("events", [])
         for event in events:
             if event['type'] != 'message':
                 continue
@@ -78,29 +81,43 @@ def webhook():
 
             if msg_type == 'text':
                 user_message = event['message']['text']
-                response = process_text_message(user_message, user_id)
-                reply_to_line(reply_token, response)
+                # PDF 指令例: 上傳 PDF
+                if user_message.startswith("/pdf "):
+                    reply = "請用 LINE 上傳 PDF 文件"
+                else:
+                    reply = process_text_message(user_id, user_message)
+                reply_to_line(reply_token, reply)
 
             elif msg_type == 'image':
                 message_id = event['message']['id']
                 image_bytes = get_line_image(message_id)
                 if image_bytes:
-                    # ✅ 修正：呼叫 process_image_with_text 讓 Gemini 分析圖片內容
-                    user_message = "用戶上傳圖片需要分析問題"
-                    response = process_image_with_text(image_bytes, user_message, user_id)
-                    reply_to_line(reply_token, response)
+                    reply = process_image(user_id, image_bytes)
+                    reply_to_line(reply_token, reply)
                 else:
                     reply_to_line(reply_token, "圖片下載失敗")
 
-            else:
-                reply_to_line(reply_token, "抱歉，目前只支援文字與圖片訊息。")
+            elif msg_type == 'file':
+                # PDF 上傳處理
+                file_info = event['message']
+                if file_info['fileName'].lower().endswith('.pdf'):
+                    url = f"https://api-data.line.me/v2/bot/message/{file_info['id']}/content"
+                    headers = {'Authorization': f'Bearer {CHANNEL_ACCESS_TOKEN}'}
+                    res = requests.get(url, headers=headers)
+                    if res.status_code == 200:
+                        pdf_bytes = res.content
+                        reply = process_pdf_upload(user_id, pdf_bytes)
+                        reply_to_line(reply_token, reply)
+                    else:
+                        reply_to_line(reply_token, "PDF 下載失敗")
+                else:
+                    reply_to_line(reply_token, "只支援 PDF 文件")
 
-        return 'OK'
+        return "OK"
     except Exception as e:
         print("Webhook 錯誤:", e)
-        return 'Error', 500
+        return "Error", 500
 
-# 可加首頁檢查
 @app.route("/", methods=['GET'])
 def index():
-    return "LINE Bot Webhook Running!"
+    return "學生臨時抱佛腳助手運行中！"
