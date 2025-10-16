@@ -4,11 +4,10 @@ from datetime import datetime
 
 class ReportManager:
     def __init__(self, save_path=None):
-        # Vercel Serverless 只能寫入 /tmp
         if save_path is None:
             save_path = "/tmp/reports"
         self.save_path = save_path
-        os.makedirs(self.save_path, exist_ok=True)  # 自動創建目錄
+        os.makedirs(self.save_path, exist_ok=True)
         self.records = []
 
     def add_record(self, user_id, user_message, ai_reply, image_bytes=None):
@@ -35,5 +34,4 @@ class ReportManager:
         filepath = os.path.join(self.save_path, filename)
         df = pd.DataFrame(self.records)
         df.to_excel(filepath, index=False)
-        print(f"報修資料已匯出: {filepath}")
         return filepath
