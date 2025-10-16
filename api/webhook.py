@@ -1,97 +1,118 @@
 from flask import Flask, request
-import os, json
+import json, os
 from datetime import datetime
-from src.pdf_processor import PDFProcessor
+import requests
 from src.gemini_responder import GeminiResponder
+from src.knowledge_retriever import KnowledgeRetriever
+from src.pdf_processor import PDFProcessor
 from src.report_manager import ReportManager
 
 app = Flask(__name__)
 
-CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 
+# 初始化模組
+retriever = KnowledgeRetriever()
+responder = GeminiResponder(api_key=os.getenv('GEMINI_API_KEY'))
 pdf_processor = PDFProcessor()
-responder = GeminiResponder(api_key=GEMINI_API_KEY)
 report_manager = ReportManager()
 
-TMP_DIR = "/tmp/uploads"
+# Serverless 可寫目錄
+TMP_DIR = "/tmp/reports"
 os.makedirs(TMP_DIR, exist_ok=True)
 
+# ---------------- LINE 功能 ----------------
 def reply_to_line(reply_token, text):
-    import requests
-    url = "https://api.line.me/v2/bot/message/reply"
-    headers = {"Content-Type":"application/json", "Authorization":f"Bearer {CHANNEL_ACCESS_TOKEN}"}
-    data = {"replyToken": reply_token, "messages":[{"type":"text","text":text}]}
+    url = 'https://api.line.me/v2/bot/message/reply'
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {CHANNEL_ACCESS_TOKEN}'
+    }
+    data = {'replyToken': reply_token, 'messages': [{'type': 'text', 'text': text}]}
     resp = requests.post(url, headers=headers, json=data)
     if resp.status_code != 200:
-        print(f"回覆訊息失敗 {resp.status_code}: {resp.text}")
+        print(f"LINE 回覆失敗: {resp.status_code} {resp.text}")
 
 def get_line_image(message_id):
-    import requests
     url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
-    headers = {"Authorization":f"Bearer {CHANNEL_ACCESS_TOKEN}"}
+    headers = {'Authorization': f'Bearer {CHANNEL_ACCESS_TOKEN}'}
     res = requests.get(url, headers=headers)
     if res.status_code != 200:
-        print(f"下載圖片失敗 {res.status_code}")
+        print(f"下載圖片失敗，狀態碼：{res.status_code}")
         return None
     return res.content
 
+# ---------------- 處理訊息 ----------------
+def process_text_message(user_message, user_id):
+    # 先檢索知識庫或 PDF
+    knowledge_chunks = retriever.retrieve(user_message)
+    pdf_chunks = pdf_processor.retrieve_relevant_chunks(user_message)
+    all_chunks = knowledge_chunks + pdf_chunks
+
+    # 判斷是否有匹配內容
+    if not all_chunks:
+        # fallback: 常識問題或基礎問題
+        prompt_chunks = ["這是一個學習助手，可以回答一般學科問題和常識。"]
+    else:
+        prompt_chunks = all_chunks
+
+    ai_reply = responder.generate_response(user_message, prompt_chunks)
+
+    # 過濾亂問
+    if len(user_message.strip()) == 0 or len(user_message) > 300:
+        ai_reply = "抱歉，我不太理解這個問題，能換個方式問嗎？"
+
+    # 存報告
+    report_manager.add_record(user_id, user_message, ai_reply)
+    return ai_reply
+
+def process_image_message(image_bytes, user_message, user_id):
+    ai_reply = responder.generate_response_with_image(image_bytes, user_message)
+    report_manager.add_record(user_id, user_message, ai_reply, image_bytes=image_bytes)
+    return ai_reply
+
+# ---------------- Webhook ----------------
 @app.route("/api/webhook", methods=['POST'])
 def webhook():
     try:
         body = request.get_data(as_text=True)
-        events = json.loads(body).get("events", [])
-
-        if len(events)==0:
-            return "OK"
+        events = json.loads(body).get('events', [])
 
         for event in events:
-            if event["type"] != "message":
+            if event['type'] != 'message':
                 continue
-            reply_token = event["replyToken"]
-            user_id = event["source"]["userId"]
-            msg_type = event["message"]["type"]
 
-            if msg_type == "text":
-                user_message = event["message"]["text"]
-                chunks = pdf_processor.retrieve_chunks(user_id, user_message)
-                ai_reply = responder.generate_response(user_message, chunks)
-                report_manager.add_record(user_id, user_message, ai_reply)
-                reply_to_line(reply_token, ai_reply)
+            reply_token = event['replyToken']
+            user_id = event['source']['userId']
+            msg_type = event['message']['type']
 
-            elif msg_type == "image":
-                message_id = event["message"]["id"]
+            if msg_type == 'text':
+                user_message = event['message']['text']
+                response = process_text_message(user_message, user_id)
+                reply_to_line(reply_token, response)
+
+            elif msg_type == 'image':
+                message_id = event['message']['id']
                 image_bytes = get_line_image(message_id)
                 if image_bytes:
-                    ai_reply = responder.generate_response_with_image(image_bytes)
-                    report_manager.add_record(user_id, "[圖片]", ai_reply)
-                    reply_to_line(reply_token, ai_reply)
+                    response = process_image_message(image_bytes, "", user_id)
+                    reply_to_line(reply_token, response)
                 else:
                     reply_to_line(reply_token, "圖片下載失敗")
 
-            else:
-                reply_to_line(reply_token, "抱歉，只支援文字與圖片訊息。")
-        return "OK"
+            elif msg_type == 'file':
+                file_name = event['message'].get('fileName', 'document.pdf')
+                file_bytes = get_line_image(event['message']['id'])
+                if file_bytes and file_name.lower().endswith(".pdf"):
+                    pdf_processor.save_pdf(user_id, file_name, file_bytes)
+                    reply_to_line(reply_token, f"PDF 已上傳並解析完成：{file_name}")
+                else:
+                    reply_to_line(reply_token, "請上傳 PDF 文件。")
 
+            else:
+                reply_to_line(reply_token, "抱歉，目前只支援文字、圖片與 PDF。")
+
+        return 'OK'
     except Exception as e:
         print("Webhook 錯誤:", e)
-        return "Error", 500
-
-@app.route("/", methods=['GET'])
-def index():
-    return "學生臨時抱佛腳助手運行中！"
-
-@app.route("/api/upload_pdf", methods=["POST"])
-def upload_pdf():
-    try:
-        file = request.files.get("file")
-        user_id = request.form.get("user_id", "anonymous")
-        if not file or not file.filename.endswith(".pdf"):
-            return "請上傳 PDF 文件", 400
-        file_path = os.path.join(TMP_DIR, f"{user_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf")
-        file.save(file_path)
-        num_chunks = pdf_processor.load_pdf(user_id, file_path)
-        return f"PDF 上傳成功，拆成 {num_chunks} 個段落"
-    except Exception as e:
-        print("PDF 上傳錯誤:", e)
-        return "Error", 500
+        return 'Error', 500
