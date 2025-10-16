@@ -4,8 +4,8 @@ from datetime import datetime
 import requests
 from src.gemini_responder import GeminiResponder
 from src.knowledge_retriever import KnowledgeRetriever
-from src.pdf_processor import PDFProcessor
 from src.report_manager import ReportManager
+from src.pdf_processor import PDFProcessor
 
 app = Flask(__name__)
 
