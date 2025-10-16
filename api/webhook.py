@@ -60,7 +60,6 @@ def process_image_message(image_bytes, user_message, user_id):
     return ai_reply
 
 
-# ---------------- Webhook ----------------
 @app.route("/api/webhook", methods=['POST'])
 def webhook():
     try:
@@ -68,15 +67,20 @@ def webhook():
         events = json.loads(body).get('events', [])
 
         for event in events:
-            if event['type'] != 'message':
+            if event.get('type') != 'message':
                 continue
 
             reply_token = event['replyToken']
-            user_id = event['source']['userId']
+            user_id = event['source'].get('userId', 'unknown')
             msg_type = event['message']['type']
 
+            # 防止 DoS 或惡意注入
+            if len(json.dumps(event)) > 20000:
+                reply_to_line(reply_token, "⚠️ 訊息過長，已被拒絕。")
+                continue
+
             if msg_type == 'text':
-                user_message = event['message']['text']
+                user_message = event['message']['text'][:500]
                 response = process_text_message(user_message, user_id)
                 reply_to_line(reply_token, response)
 
@@ -87,7 +91,7 @@ def webhook():
                     response = process_image_message(image_bytes, "", user_id)
                     reply_to_line(reply_token, response)
                 else:
-                    reply_to_line(reply_token, "圖片下載失敗")
+                    reply_to_line(reply_token, "⚠️ 圖片下載失敗，請重試。")
 
             else:
                 reply_to_line(reply_token, "目前僅支援文字與圖片。")
@@ -95,4 +99,5 @@ def webhook():
         return 'OK'
     except Exception as e:
         print("Webhook 錯誤:", e)
-        return 'Error', 500  # ✅ ← 這行必須縮排到 except 裡面！
+        # 不暴露內部錯誤細節
+        return '伺服器錯誤，請稍後再試', 500
