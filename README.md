@@ -35,23 +35,59 @@
 ## 專案結構
 
 ```mermaid
-graph TD
-    A[api/webhook.py] -->|uses| B[GeminiResponder]
-    A -->|uses| C[KnowledgeRetriever]
-    A -->|uses| D[ReportManager]
+flowchart TD
+    %% External Users and Services
+    User["User"]:::external
+    LINEapi["LINE Messaging API"]:::external
+    GeminiAPI["Google Gemini LLM API"]:::external
 
-    B --> E[Google Gemini LLM API]
-    C --> F[Fallback Knowledge]
+    %% Serverless Function Boundary
+    subgraph "Serverless Function (Vercel / Flask)"
+        Webhook["Webhook Service (/api/webhook)"]:::module
+        Retriever["KnowledgeRetriever"]:::module
+        Responder["GeminiResponder"]:::module
+        Reporter["ReportManager"]:::module
+        Env[/"Env: LINE_TOKEN, GEMINI_API_KEY"/]:::annotation
+        Env -.-> Webhook
+    end
 
-    D --> G[Reports Directory]
+    %% Storage
+    Reports["Reports Storage"]:::storage
 
-    classDef app fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef module fill:#bbf,stroke:#333,stroke-width:1px;
+    %% Project Files
+    subgraph "Project Files"
+        Vercel["vercel.json"]:::config
+        Req["requirements.txt"]:::config
+        Readme["README.md"]:::config
+    end
 
-    A:::app
-    B:::module
-    C:::module
-    D:::module
+    %% Data Flows
+    User -->|"sends message"| LINEapi
+    LINEapi -->|"HTTP POST"| Webhook
+    Webhook -->|"/getFallbackKnowledge"| Retriever
+    Webhook -->|"/constructPrompt"| Responder
+    Responder -->|"SDK call"| GeminiAPI
+    GeminiAPI -->|"response"| Responder
+    Responder -->|"/reply Payload"| Webhook
+    Webhook -->|"HTTP Response"| LINEapi
+    Webhook -->|"logInteraction"| Reporter
+    Reporter -->|"write Excel"| Reports
+
+    %% Click Events
+    click Webhook "https://github.com/trinity-syt-security/testlinetogemini/blob/main/api/webhook.py"
+    click Responder "https://github.com/trinity-syt-security/testlinetogemini/blob/main/src/gemini_responder.py"
+    click Retriever "https://github.com/trinity-syt-security/testlinetogemini/blob/main/src/knowledge_retriever.py"
+    click Reporter "https://github.com/trinity-syt-security/testlinetogemini/blob/main/src/report_manager.py"
+    click Vercel "https://github.com/trinity-syt-security/testlinetogemini/blob/main/vercel.json"
+    click Req "https://github.com/trinity-syt-security/testlinetogemini/blob/main/requirements.txt"
+    click Readme "https://github.com/trinity-syt-security/testlinetogemini/blob/main/README.md"
+
+    %% Styles
+    classDef module fill:#cce5ff,stroke:#004085,color:#004085
+    classDef external fill:#d4edda,stroke:#155724,color:#155724
+    classDef storage fill:#fff3cd,stroke:#856404,color:#856404
+    classDef annotation fill:#e2e3e5,stroke:#d6d8db,color:#6c757d,stroke-dasharray:2 2
+    classDef config fill:#f8f9fa,stroke:#6c757d,color:#343a40
 
 ```
 
